@@ -1,2 +1,6 @@
 /.claude
 /ai-test-demo
+node_modules/
+**/node_modules/
+.env
+**/.env

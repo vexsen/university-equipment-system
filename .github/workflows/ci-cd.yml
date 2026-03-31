@@ -1,0 +1,73 @@
+name: React App CI/CD
+
+# ทำงานเมื่อ push ขึ้น branch main
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  # Job 1: Build และ Push Docker Image ขึ้น Docker Hub
+  build-and-push-docker-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push Frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./university-equipment-system/frontend
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/university-equipment-frontend:latest
+
+      - name: Build and push Backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./university-equipment-system/backend
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/university-equipment-backend:latest
+
+  # Job 2: Deploy ขึ้น Server ผ่าน SSH
+  deploy:
+    needs: build-and-push-docker-image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Server via SSH
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            # Pull images ใหม่จาก Docker Hub
+            docker pull ${{ secrets.DOCKER_USERNAME }}/university-equipment-backend:latest
+            docker pull ${{ secrets.DOCKER_USERNAME }}/university-equipment-frontend:latest
+
+            # หยุดและลบ container เดิม
+            docker stop equipment-backend || true
+            docker stop equipment-frontend || true
+            docker rm equipment-backend || true
+            docker rm equipment-frontend || true
+
+            # รัน container ใหม่
+            docker run -d --name equipment-backend \
+              -p 5000:5000 \
+              --restart unless-stopped \
+              ${{ secrets.DOCKER_USERNAME }}/university-equipment-backend:latest
+
+            docker run -d --name equipment-frontend \
+              -p 80:80 \
+              --restart unless-stopped \
+              ${{ secrets.DOCKER_USERNAME }}/university-equipment-frontend:latest
+
+            echo "Deploy สำเร็จ!"
