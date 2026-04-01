@@ -59,13 +59,33 @@ jobs:
             docker rm equipment-backend || true
             docker rm equipment-frontend || true
 
-            # รัน container ใหม่
+            # สร้าง network ถ้ายังไม่มี
+            docker network create equipment-network || true
+
+            # รัน MongoDB ถ้ายังไม่มี
+            if ! docker ps -a --format '{{.Names}}' | grep -q '^equipment-mongo$'; then
+              docker run -d --name equipment-mongo \
+                --network equipment-network \
+                -v equipment_mongo_data:/data/db \
+                --restart unless-stopped \
+                mongo:7
+            fi
+
+            # รัน Backend พร้อม env variables และ network
             docker run -d --name equipment-backend \
+              --network equipment-network \
               -p 5000:5000 \
+              -v equipment_uploads:/app/data/uploads \
+              -e NODE_ENV=production \
+              -e MONGO_URI=mongodb://equipment-mongo:27017/university_equipment \
+              -e JWT_SECRET=${{ secrets.JWT_SECRET }} \
+              -e JWT_EXPIRES_IN=7d \
               --restart unless-stopped \
               ${{ secrets.DOCKER_USERNAME }}/university-equipment-backend:latest
 
+            # รัน Frontend พร้อม network (nginx ต้องเชื่อมถึง backend)
             docker run -d --name equipment-frontend \
+              --network equipment-network \
               -p 80:80 \
               --restart unless-stopped \
               ${{ secrets.DOCKER_USERNAME }}/university-equipment-frontend:latest
